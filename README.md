@@ -1,4 +1,4 @@
-# Getting started V4
+# Getting started V5
 
 This repository is a sample application for users following the getting started guide at https://docs.docker.com/get-started/.
 

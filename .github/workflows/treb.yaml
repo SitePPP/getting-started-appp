@@ -9,9 +9,7 @@ jobs:
       - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - run: ls
       - name: Build the docker file
-        run: docker build . -f Dockerfile -t hrl/getting-started-appp:latest
-      - name: List the docker images
-        run: docker ps
+        run: docker build . -f Dockerfile -t ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:latest
       - name: login to docker hub
         uses: docker/login-action@v3
         with:

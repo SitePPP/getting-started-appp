@@ -9,6 +9,8 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+      - name: Vérification des tags existants
+        run: git tag -l
       - name: Get next version
         uses: reecetech/version-increment@2024.10.1
         id: version

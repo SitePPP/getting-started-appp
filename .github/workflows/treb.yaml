@@ -10,8 +10,7 @@ jobs:
         uses: reecetech/version-increment@2024.10.1
         id: version
         with:
-          scheme: semver
-          increment: patch
+          use_api: true
       - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - run: ls
       - name: Build the docker file

@@ -4,4 +4,18 @@ jobs:
   build-docker-image:
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - run: ls
+      - name: Build the docker file
+        run: docker build . -f Dockerfile -t hrl/getting-started-appp:latest
+      - name: List the docker images
+        run: docker ps
+      - name: login to docker hub
+        env:
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_PASSWORD}}
+        run: docker login -u $username -p $password
+      - name: push the docker image
+        run: docker push ${{secrets.DOCKERHUB_USERNAME}}/getting-started-appp:latest

@@ -1,6 +1,6 @@
 name: build-docker
 on:
-  workflow_dispatch
+  [workflow_dispatch, push]
 
 jobs:
   build-docker-image:
@@ -82,12 +82,17 @@ jobs:
                 -e MYSQL_DB=${{ secrets.MYSQL_DB }} \
                 ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
 
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > ec2_key.pem
+          chmod 400 ec2_key.pem
+
       - name: Update container on existing EC2 instance
         if: steps.instance_state.outputs.instance_state == 'running'
         run: |
           PUBLIC_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ secrets.AWS_INSTANCE_NAME }}" --query "Reservations[*].Instances[*].PublicIpAddress" --output text)
           echo "Updating container on instance with IP: $PUBLIC_IP"
-          ssh -o StrictHostKeyChecking=no -i ${{ secrets.EC2_SSH_KEY }} ec2-user@$PUBLIC_IP << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ec2-user@$PUBLIC_IP << 'EOF'
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
             docker stop mon_container || true
             docker rm mon_container || true

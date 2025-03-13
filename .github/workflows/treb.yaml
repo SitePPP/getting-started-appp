@@ -48,7 +48,7 @@ jobs:
             --instance-type t2.micro \
             --key-name ${{ secrets.AWS_KEY_PAIR }} \
             --security-groups launch-wizard-1 \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=g12-cli}]' \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=${{ secrets.AWS_INSTANCE_NAME }} }]' \
             --user-data '#!/bin/bash
             sudo yum update -y
             sudo yum install -y docker
@@ -61,6 +61,6 @@ jobs:
 
       - name: Get Instance Public IP
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=g12-cli" --query "Reservations[*].Instances[*].InstanceId" --output text)
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ secrets.AWS_INSTANCE_NAME }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[*].Instances[*].PublicIpAddress" --output text)
           echo "Server is running at: http://$PUBLIC_IP"

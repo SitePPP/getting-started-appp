@@ -1,6 +1,7 @@
 name: build-docker
 on:
   workflow_dispatch
+
 jobs:
   build-docker-image:
     runs-on: ubuntu-latest
@@ -24,7 +25,8 @@ jobs:
       - run: ls
 
       - name: Build the docker file
-        run: docker build . -f Dockerfile -t ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+        run: |
+          docker build . -f Dockerfile -t ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -34,37 +36,38 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Push the Docker image
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+
       - name: Configure AWS CLI
         run: |
           aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws configure set region eu-west-3
           aws configure set output json
-      - name: Deploy on AWS EC2
+
+      - name: Check instance state
+        id: instance_state
         run: |
-          # Vérifier si une instance existe déjà avec le nom donné
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ secrets.AWS_INSTANCE_NAME }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
-          
-          # Si l'instance existe, récupérer son état
-          if [ ! -z "$INSTANCE_ID" ]; then
-            INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[*].Instances[*].State.Name" --output text)
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "instance_state=not_found" >> $GITHUB_OUTPUT
           else
-            INSTANCE_STATE="not_found"
+            INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[*].Instances[*].State.Name" --output text)
+            echo "instance_state=$INSTANCE_STATE" >> $GITHUB_OUTPUT
           fi
 
-          echo "Current instance state: $INSTANCE_STATE"
-
-          # Si l'instance n'existe pas ou est arrêtée, la (re)lancer
-          if [ "$INSTANCE_STATE" == "not_found" ] || [ "$INSTANCE_STATE" == "stopped" ]; then
-            echo "🚀 Creating a new EC2 instance..."
-            aws ec2 run-instances \
-              --image-id ${{ secrets.AWS_AMI }} \
-              --instance-type t2.micro \
-              --key-name ${{ secrets.AWS_KEY_PAIR }} \
-              --security-groups launch-wizard-1 \
-              --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=${{ secrets.AWS_INSTANCE_NAME }} }]' \
-              --user-data '#!/bin/bash
+      - name: Deploy on AWS EC2 (create instance if needed)
+        if: steps.instance_state.outputs.instance_state == 'not_found' || steps.instance_state.outputs.instance_state == 'stopped'
+        run: |
+          echo "🚀 Creating a new EC2 instance..."
+          aws ec2 run-instances \
+            --image-id ${{ secrets.AWS_AMI }} \
+            --instance-type t2.micro \
+            --key-name ${{ secrets.AWS_KEY_PAIR }} \
+            --security-groups launch-wizard-1 \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ secrets.AWS_INSTANCE_NAME }} }]" \
+            --user-data '#!/bin/bash
               sudo yum update -y
               sudo yum install -y docker
               sudo usermod -aG docker ec2-user
@@ -72,10 +75,29 @@ jobs:
               sudo systemctl enable docker
               sudo systemctl start docker
               docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
-              docker run -d --name mon_container --restart=always -p 80:80 -e MYSQL_HOST=${{ secrets.MYSQL_HOST }}  -e MYSQL_USER=${{ secrets.MYSQL_USER }} -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} -e MYSQL_DB=${{ secrets.MYSQL_DB }} ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
-          else
-            echo "✅ Instance already running, skipping creation"
-          fi
+              docker run -d --name mon_container --restart=always -p 80:80 \
+                -e MYSQL_HOST=${{ secrets.MYSQL_HOST }} \
+                -e MYSQL_USER=${{ secrets.MYSQL_USER }} \
+                -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} \
+                -e MYSQL_DB=${{ secrets.MYSQL_DB }} \
+                ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
+
+      - name: Update container on existing EC2 instance
+        if: steps.instance_state.outputs.instance_state == 'running'
+        run: |
+          PUBLIC_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ secrets.AWS_INSTANCE_NAME }}" --query "Reservations[*].Instances[*].PublicIpAddress" --output text)
+          echo "Updating container on instance with IP: $PUBLIC_IP"
+          ssh -o StrictHostKeyChecking=no -i ${{ secrets.EC2_SSH_KEY }} ec2-user@$PUBLIC_IP << 'EOF'
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+            docker stop mon_container || true
+            docker rm mon_container || true
+            docker run -d --name mon_container --restart=always -p 80:80 \
+              -e MYSQL_HOST=${{ secrets.MYSQL_HOST }} \
+              -e MYSQL_USER=${{ secrets.MYSQL_USER }} \
+              -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} \
+              -e MYSQL_DB=${{ secrets.MYSQL_DB }} \
+              ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+          EOF
 
       - name: Get Instance Public IP
         run: |

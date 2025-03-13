@@ -44,7 +44,7 @@ jobs:
       - name: Deploy on AWS EC2
         run: |
           aws ec2 run-instances \
-            --image-id ami-0fcc1d7ed380d3549 \
+            --image-id ${{ secrets.AWS_AMI }} \
             --instance-type t2.micro \
             --key-name ${{ secrets.AWS_KEY_PAIR }} \
             --security-groups launch-wizard-1 \
@@ -57,7 +57,7 @@ jobs:
             sudo systemctl enable docker
             sudo systemctl start docker
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
-            docker run -d --name mon_container --restart=always -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
+            docker run -d --name mon_container --restart=always -p 80:80 -e MYSQL_HOST=${{ secrets.MYSQL_HOST }}  -e MYSQL_USER=${{ secrets.MYSQL_USER }} -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} -e MYSQL_DB=${{ secrets.MYSQL_DB }} ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
 
       - name: Get Instance Public IP
         run: |

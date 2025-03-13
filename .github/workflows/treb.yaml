@@ -43,21 +43,39 @@ jobs:
           aws configure set output json
       - name: Deploy on AWS EC2
         run: |
-          aws ec2 run-instances \
-            --image-id ${{ secrets.AWS_AMI }} \
-            --instance-type t2.micro \
-            --key-name ${{ secrets.AWS_KEY_PAIR }} \
-            --security-groups launch-wizard-1 \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=${{ secrets.AWS_INSTANCE_NAME }} }]' \
-            --user-data '#!/bin/bash
-            sudo yum update -y
-            sudo yum install -y docker
-            sudo usermod -aG docker ec2-user
-            newgrp docker
-            sudo systemctl enable docker
-            sudo systemctl start docker
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
-            docker run -d --name mon_container --restart=always -p 80:80 -e MYSQL_HOST=${{ secrets.MYSQL_HOST }}  -e MYSQL_USER=${{ secrets.MYSQL_USER }} -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} -e MYSQL_DB=${{ secrets.MYSQL_DB }} ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
+          # Vérifier si une instance existe déjà avec le nom donné
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ secrets.AWS_INSTANCE_NAME }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+          
+          # Si l'instance existe, récupérer son état
+          if [ ! -z "$INSTANCE_ID" ]; then
+            INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[*].Instances[*].State.Name" --output text)
+          else
+            INSTANCE_STATE="not_found"
+          fi
+
+          echo "Current instance state: $INSTANCE_STATE"
+
+          # Si l'instance n'existe pas ou est arrêtée, la (re)lancer
+          if [ "$INSTANCE_STATE" == "not_found" ] || [ "$INSTANCE_STATE" == "stopped" ]; then
+            echo "🚀 Creating a new EC2 instance..."
+            aws ec2 run-instances \
+              --image-id ${{ secrets.AWS_AMI }} \
+              --instance-type t2.micro \
+              --key-name ${{ secrets.AWS_KEY_PAIR }} \
+              --security-groups launch-wizard-1 \
+              --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=${{ secrets.AWS_INSTANCE_NAME }} }]' \
+              --user-data '#!/bin/bash
+              sudo yum update -y
+              sudo yum install -y docker
+              sudo usermod -aG docker ec2-user
+              newgrp docker
+              sudo systemctl enable docker
+              sudo systemctl start docker
+              docker pull ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}
+              docker run -d --name mon_container --restart=always -p 80:80 -e MYSQL_HOST=${{ secrets.MYSQL_HOST }}  -e MYSQL_USER=${{ secrets.MYSQL_USER }} -e MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }} -e MYSQL_DB=${{ secrets.MYSQL_DB }} ${{ secrets.DOCKERHUB_USERNAME }}/getting-started-appp:${{ steps.version.outputs.version }}'
+          else
+            echo "✅ Instance already running, skipping creation."
+          fi
 
       - name: Get Instance Public IP
         run: |
